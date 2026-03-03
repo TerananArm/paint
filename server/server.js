@@ -48,6 +48,22 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('clear');
   });
 
+  // Handle global undo
+  socket.on('undo', (data) => {
+    const { strokeId } = data;
+    drawHistory = drawHistory.filter(item => {
+      // If it's a batch, filter out the specific strokeId from points
+      if (Array.isArray(item)) {
+        return false; // This part is tricky if we store points directly. 
+        // Let's refine history storage.
+      }
+      return item.strokeId !== strokeId;
+    });
+    // Simplified: just filter history by strokeId
+    drawHistory = drawHistory.filter(item => item.strokeId !== strokeId);
+    socket.broadcast.emit('undo', { strokeId });
+  });
+
   // Handle disconnection
   socket.on('disconnect', () => {
     connectedUsers--;

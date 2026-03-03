@@ -134,9 +134,9 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             ctx.imageSmoothingEnabled = true;
             ctxRef.current = ctx;
 
-            ctx.fillStyle = '#111122';
+            ctx.fillStyle = '#f8f9fa'; // Light background
             ctx.fillRect(0, 0, w, h);
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#ffffff'; // White canvas
             ctx.fillRect(offsetX, offsetY, VIRTUAL_W * scale, VIRTUAL_H * scale);
 
             const oCtx = overlay.getContext('2d');
@@ -279,9 +279,9 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
         const s = scaleRef.current;
         const { x: ox, y: oy } = offsetRef.current;
 
-        ctx.fillStyle = '#111122';
+        ctx.fillStyle = '#f8f9fa';
         ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = '#1a1a2e';
+        ctx.fillStyle = '#ffffff';
         ctx.fillRect(ox, oy, VIRTUAL_W * s, VIRTUAL_H * s);
 
         const currentLayers = layersRef.current;
@@ -302,7 +302,17 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             redrawAll();
         };
         socket.on('init-history', handleInitHistory);
-        return () => socket.off('init-history', handleInitHistory);
+
+        const handleRemoteUndo = ({ strokeId }) => {
+            actionsRef.current = actionsRef.current.filter(a => a.strokeId !== strokeId);
+            redrawAll();
+        };
+        socket.on('undo', handleRemoteUndo);
+
+        return () => {
+            socket.off('init-history', handleInitHistory);
+            socket.off('undo', handleRemoteUndo);
+        };
     }, [socket, redrawAll]);
 
     // ===== Draw split line on overlay =====
@@ -365,11 +375,12 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
 
         if (isFillTool) {
             // Flood fill
+            const strokeId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
             performFill(vx, vy, color);
-            const action = { type: 'fill', x: vx, y: vy, color, layerId: activeLayerId, isLocal: true };
+            const action = { type: 'fill', x: vx, y: vy, color, layerId: activeLayerId, isLocal: true, strokeId };
             actionsRef.current.push(action);
             redoStackRef.current = [];
-            socket.emit('draw', { type: 'fill', x: vx, y: vy, color, layerId: activeLayerId });
+            socket.emit('draw', { type: 'fill', x: vx, y: vy, color, layerId: activeLayerId, strokeId });
             return;
         }
 
@@ -379,16 +390,17 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             shapeStart.current = { vx, vy };
         } else {
             lastPoint.current = { vx, vy };
-            const cc = tool === 'eraser' ? '#1a1a2e' : color;
+            const strokeId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            const cc = tool === 'eraser' ? '#ffffff' : color; // Eraser uses canvas white
             const cs = tool === 'eraser' ? brushSize * 3 : brushSize;
 
             currentStrokeRef.current = {
-                type: 'stroke', layerId: activeLayerId, isLocal: true,
+                type: 'stroke', layerId: activeLayerId, isLocal: true, strokeId,
                 points: [{ x: vx, y: vy, color: cc, size: cs, type: 'start' }],
             };
 
             drawDotV(vx, vy, cc, cs);
-            socket.emit('draw', { x: vx, y: vy, color: cc, size: cs, type: 'start', layerId: activeLayerId });
+            socket.emit('draw', { x: vx, y: vy, color: cc, size: cs, type: 'start', layerId: activeLayerId, strokeId });
         }
     }, [color, brushSize, tool, socket, isShapeTool, isFillTool, getVirtualCoords, drawDotV, activeLayerId, isOnMySide, performFill]);
 
@@ -425,7 +437,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             }
 
             const prev = lastPoint.current;
-            const cc = tool === 'eraser' ? '#1a1a2e' : color;
+            const cc = tool === 'eraser' ? '#ffffff' : color;
             const cs = tool === 'eraser' ? brushSize * 3 : brushSize;
 
             drawLineV(prev.vx, prev.vy, clampedVx, vy, cc, cs);
@@ -442,6 +454,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             pointBuffer.current.push({
                 x: clampedVx, y: vy, px: prev.vx, py: prev.vy,
                 color: cc, size: cs, type: 'draw', layerId: activeLayerId,
+                strokeId: currentStrokeRef.current?.strokeId
             });
 
             if (now - lastEmitTime.current >= THROTTLE_MS) {
@@ -465,6 +478,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             // Native pointer events don't use changedTouches
             ({ vx, vy } = getVirtualCoords(e));
             const start = shapeStart.current;
+            const strokeId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
             drawShapeV(tool, start.vx, start.vy, vx, vy, color, brushSize);
             clearOverlay();
@@ -482,7 +496,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             const action = {
                 type: 'shape', shape: tool,
                 x0: start.vx, y0: start.vy, x1: vx, y1: vy,
-                color, size: brushSize, layerId: activeLayerId, isLocal: true,
+                color, size: brushSize, layerId: activeLayerId, isLocal: true, strokeId
             };
             actionsRef.current.push(action);
             redoStackRef.current = [];
@@ -490,12 +504,12 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
             socket.emit('draw', {
                 type: 'shape', shape: tool,
                 x0: start.vx, y0: start.vy, x1: vx, y1: vy,
-                color, size: brushSize, layerId: activeLayerId,
+                color, size: brushSize, layerId: activeLayerId, strokeId
             });
             shapeStart.current = null;
         } else {
             flushBuffer();
-            socket.emit('draw', { type: 'end', layerId: activeLayerId });
+            socket.emit('draw', { type: 'end', layerId: activeLayerId, strokeId: currentStrokeRef.current?.strokeId });
             if (currentStrokeRef.current && currentStrokeRef.current.points.length > 0) {
                 actionsRef.current.push(currentStrokeRef.current);
                 redoStackRef.current = [];
@@ -539,15 +553,17 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
                     x0: data.x0, y0: data.y0, x1: data.x1, y1: data.y1,
                     color: data.color, size: data.size,
                     layerId: data.layerId || 'layer-1', isLocal: false,
+                    strokeId: data.strokeId
                 };
                 actionsRef.current.push(action);
                 if (visible) drawShapeV(data.shape, data.x0, data.y0, data.x1, data.y1, data.color, data.size);
             } else if (data.type === 'fill') {
-                const action = { type: 'fill', x: data.x, y: data.y, color: data.color, layerId: data.layerId || 'layer-1', isLocal: false };
+                const action = { type: 'fill', x: data.x, y: data.y, color: data.color, layerId: data.layerId || 'layer-1', isLocal: false, strokeId: data.strokeId };
                 actionsRef.current.push(action);
                 if (visible) performFill(data.x, data.y, data.color);
             } else if (data.type === 'end') {
                 if (remoteStrokeRef.current && remoteStrokeRef.current.points.length > 0) {
+                    remoteStrokeRef.current.strokeId = data.strokeId;
                     actionsRef.current.push(remoteStrokeRef.current);
                     remoteStrokeRef.current = null;
                 }
@@ -574,12 +590,14 @@ const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayer
         const actions = actionsRef.current;
         for (let i = actions.length - 1; i >= 0; i--) {
             if (actions[i].isLocal) {
-                redoStackRef.current.push(actions.splice(i, 1)[0]);
+                const action = actions.splice(i, 1)[0];
+                redoStackRef.current.push(action);
+                socket.emit('undo', { strokeId: action.strokeId });
                 redrawAll();
                 return;
             }
         }
-    }, [redrawAll]);
+    }, [redrawAll, socket]);
 
     const redo = useCallback(() => {
         if (redoStackRef.current.length === 0) return;
