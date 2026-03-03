@@ -1,17 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg-primary: #0a0a1a;
-  --bg-secondary: #12122a;
-  --bg-toolbar: rgba(18, 18, 42, 0.85);
-  --border-color: rgba(255, 255, 255, 0.06);
-  --text-primary: #e8e8f0;
-  --text-secondary: #8888aa;
+  --bg-primary: #f8f9fa;
+  --bg-secondary: #ffffff;
+  --bg-toolbar: rgba(255, 255, 255, 0.85);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a4a6a;
   --accent: #7c5cfc;
   --accent-glow: rgba(124, 92, 252, 0.3);
   --danger: #ff4757;
   --success: #2ed573;
-  --canvas-bg: #1a1a2e;
+  --canvas-bg: #ffffff;
 }
 
 * {

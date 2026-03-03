@@ -14,6 +14,9 @@ function App() {
     { id: 'layer-1', name: 'Layer 1', visible: true },
   ]);
   const [activeLayerId, setActiveLayerId] = useState('layer-1');
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitSide, setSplitSide] = useState('left');
+  const [penOnly, setPenOnly] = useState(false);
   const { emit, on, off, isConnected, userCount } = useSocket();
   const canvasRef = useRef(null);
 
@@ -39,12 +42,11 @@ function App() {
   };
 
   const deleteLayer = (id) => {
-    if (layers.length <= 1) return; // keep at least 1 layer
+    if (layers.length <= 1) return;
     setLayers((prev) => prev.filter((l) => l.id !== id));
     if (activeLayerId === id) {
       setActiveLayerId(layers.find((l) => l.id !== id)?.id || layers[0].id);
     }
-    // Remove actions on this layer
     canvasRef.current?.deleteLayerActions(id);
   };
 
@@ -74,6 +76,12 @@ function App() {
         addLayer={addLayer}
         deleteLayer={deleteLayer}
         toggleLayerVisibility={toggleLayerVisibility}
+        splitMode={splitMode}
+        setSplitMode={setSplitMode}
+        splitSide={splitSide}
+        setSplitSide={setSplitSide}
+        penOnly={penOnly}
+        setPenOnly={setPenOnly}
       />
       <div className="canvas-container">
         <Canvas
@@ -84,6 +92,9 @@ function App() {
           socket={socket}
           layers={layers}
           activeLayerId={activeLayerId}
+          splitMode={splitMode}
+          splitSide={splitSide}
+          penOnly={penOnly}
         />
       </div>
     </div>

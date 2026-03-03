@@ -12,6 +12,8 @@ export default function Toolbar({
     isConnected, userCount,
     layers, activeLayerId, setActiveLayerId,
     addLayer, deleteLayer, toggleLayerVisibility,
+    splitMode, setSplitMode, splitSide, setSplitSide,
+    penOnly, setPenOnly,
 }) {
     const [showCustomColor, setShowCustomColor] = useState(false);
 
@@ -21,17 +23,13 @@ export default function Toolbar({
             <div className="toolbar-section">
                 <div className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
                     <span className="status-dot" />
-                    <span className="status-text">
-                        {isConnected ? 'Connected' : 'Disconnected'}
-                    </span>
+                    <span className="status-text">{isConnected ? 'Connected' : 'Disconnected'}</span>
                 </div>
                 {isConnected && (
                     <div className="user-count">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                            <circle cx="9" cy="7" r="4" />
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
                         </svg>
                         <span>{userCount} online</span>
                     </div>
@@ -41,16 +39,14 @@ export default function Toolbar({
             {/* Undo / Redo */}
             <div className="toolbar-section">
                 <div className="tool-buttons">
-                    <button className="tool-btn" onClick={onUndo} title="Undo (Ctrl+Z)">
+                    <button className="tool-btn" onClick={onUndo} title="Undo (⌘Z)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="1 4 1 10 7 10" />
-                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                            <polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                         </svg>
                     </button>
-                    <button className="tool-btn" onClick={onRedo} title="Redo (Ctrl+Shift+Z)">
+                    <button className="tool-btn" onClick={onRedo} title="Redo (⌘⇧Z)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="23 4 23 10 17 10" />
-                            <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+                            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
                         </svg>
                     </button>
                 </div>
@@ -62,15 +58,19 @@ export default function Toolbar({
                 <div className="tool-buttons">
                     <button className={`tool-btn ${tool === 'brush' ? 'active' : ''}`} onClick={() => setTool('brush')} title="Brush">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 19l7-7 3 3-7 7-3-3z" />
-                            <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-                            <path d="M2 2l7.586 7.586" />
-                            <circle cx="11" cy="11" r="2" />
+                            <path d="M12 19l7-7 3 3-7 7-3-3z" /><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                            <path d="M2 2l7.586 7.586" /><circle cx="11" cy="11" r="2" />
                         </svg>
                     </button>
                     <button className={`tool-btn ${tool === 'eraser' ? 'active' : ''}`} onClick={() => setTool('eraser')} title="Eraser">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.8 1.4c.8-.8 2-.8 2.8 0L21.2 5c.8.8.8 2 0 2.8L12 17" />
+                        </svg>
+                    </button>
+                    <button className={`tool-btn ${tool === 'fill' ? 'active' : ''}`} onClick={() => setTool('fill')} title="Paint Bucket">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M19 11l-8-8-2 2 5 5H2v2h12l-5 5 2 2 8-8z" />
+                            <path d="M20 14c.5.9 1 1.8 1 3 0 1.7-1.3 3-3 3s-3-1.3-3-3c0-1.2.5-2.1 1-3l2-3 2 3z" />
                         </svg>
                     </button>
                 </div>
@@ -97,11 +97,10 @@ export default function Toolbar({
                 <label className="section-label">Colors</label>
                 <div className="color-grid">
                     {PRESET_COLORS.map((c) => (
-                        <button
-                            key={c}
+                        <button key={c}
                             className={`color-swatch ${color === c && tool !== 'eraser' ? 'active' : ''}`}
                             style={{ backgroundColor: c }}
-                            onClick={() => { setColor(c); setTool('brush'); }}
+                            onClick={() => { setColor(c); if (tool === 'eraser') setTool('brush'); }}
                             title={c}
                         />
                     ))}
@@ -114,7 +113,7 @@ export default function Toolbar({
                         Custom
                     </button>
                     {showCustomColor && (
-                        <input type="color" value={color} onChange={(e) => { setColor(e.target.value); setTool('brush'); }} className="color-picker-input" />
+                        <input type="color" value={color} onChange={(e) => { setColor(e.target.value); if (tool === 'eraser') setTool('brush'); }} className="color-picker-input" />
                     )}
                 </div>
             </div>
@@ -125,6 +124,57 @@ export default function Toolbar({
                 <input type="range" min="1" max="50" value={brushSize} onChange={(e) => setBrushSize(parseInt(e.target.value))} className="size-slider" />
                 <div className="size-preview-wrapper">
                     <div className="size-preview" style={{ width: Math.min(brushSize, 40), height: Math.min(brushSize, 40), backgroundColor: tool === 'eraser' ? '#555' : color }} />
+                </div>
+            </div>
+
+            {/* Split Screen */}
+            <div className="toolbar-section">
+                <label className="section-label">Split Canvas</label>
+                <div className="split-controls">
+                    <button
+                        className={`split-toggle ${splitMode ? 'on' : ''}`}
+                        onClick={() => setSplitMode(!splitMode)}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <line x1="12" y1="3" x2="12" y2="21" />
+                        </svg>
+                        {splitMode ? 'ON' : 'OFF'}
+                    </button>
+                    {splitMode && (
+                        <div className="split-side-btns">
+                            <button
+                                className={`split-side-btn ${splitSide === 'left' ? 'active' : ''}`}
+                                onClick={() => setSplitSide('left')}
+                            >
+                                ← Left
+                            </button>
+                            <button
+                                className={`split-side-btn ${splitSide === 'right' ? 'active' : ''}`}
+                                onClick={() => setSplitSide('right')}
+                            >
+                                Right →
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Pen Only Mode */}
+            <div className="toolbar-section">
+                <label className="section-label">Input Mode</label>
+                <div className="split-controls">
+                    <button
+                        className={`split-toggle ${penOnly ? 'on' : ''}`}
+                        onClick={() => setPenOnly(!penOnly)}
+                        title="Ignore finger touch (Apple Pencil only)"
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                            <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                        </svg>
+                        {penOnly ? 'Pen Only' : 'All Input'}
+                    </button>
                 </div>
             </div>
 
@@ -140,15 +190,11 @@ export default function Toolbar({
                 </div>
                 <div className="layer-list">
                     {[...layers].reverse().map((layer) => (
-                        <div
-                            key={layer.id}
-                            className={`layer-item ${activeLayerId === layer.id ? 'active' : ''}`}
-                            onClick={() => setActiveLayerId(layer.id)}
-                        >
+                        <div key={layer.id} className={`layer-item ${activeLayerId === layer.id ? 'active' : ''}`} onClick={() => setActiveLayerId(layer.id)}>
                             <button
                                 className={`layer-visibility ${layer.visible ? 'visible' : 'hidden'}`}
                                 onClick={(e) => { e.stopPropagation(); toggleLayerVisibility(layer.id); }}
-                                title={layer.visible ? 'Hide layer' : 'Show layer'}
+                                title={layer.visible ? 'Hide' : 'Show'}
                             >
                                 {layer.visible ? (
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -164,11 +210,7 @@ export default function Toolbar({
                             </button>
                             <span className="layer-name">{layer.name}</span>
                             {layers.length > 1 && (
-                                <button
-                                    className="layer-delete-btn"
-                                    onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }}
-                                    title="Delete layer"
-                                >
+                                <button className="layer-delete-btn" onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} title="Delete">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                         <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                                     </svg>

@@ -17,26 +17,34 @@ app.use(cors());
 
 // Track connected users
 let connectedUsers = 0;
+// Track drawn events
+let drawHistory = [];
 
 io.on('connection', (socket) => {
   connectedUsers++;
   console.log(`✅ User connected: ${socket.id} (Total: ${connectedUsers})`);
+
+  // Send history to new user
+  socket.emit('init-history', drawHistory);
 
   // Notify all clients about updated user count
   io.emit('users', connectedUsers);
 
   // Relay drawing data to all other clients
   socket.on('draw', (data) => {
+    drawHistory.push(data);
     socket.broadcast.emit('draw', data);
   });
 
   // Relay batch drawing data (throttled points)
   socket.on('draw-batch', (dataArray) => {
+    drawHistory.push(...dataArray);
     socket.broadcast.emit('draw-batch', dataArray);
   });
 
   // Relay clear canvas event to all other clients
   socket.on('clear', () => {
+    drawHistory = [];
     socket.broadcast.emit('clear');
   });
 
