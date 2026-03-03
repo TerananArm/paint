@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-// Dynamically resolve server URL — uses the same hostname the page was loaded from
-// so other devices on the same network can connect
-const SERVER_URL = `http://${window.location.hostname}:3001`;
+// In production: use VITE_SERVER_URL env var (e.g. https://paint-server.onrender.com)
+// In dev: connect to same hostname on port 3001 (works for LAN too)
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3001`;
 
 export function useSocket() {
     const socketRef = useRef(null);
