@@ -315,6 +315,140 @@
   background-clip: text;
 }
 
+/* ===== Layer Panel ===== */
+.layers-section {
+  flex: 0 1 auto;
+}
+
+.layers-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.layer-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.layer-add-btn:hover {
+  background: rgba(124, 92, 252, 0.15);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.layer-list::-webkit-scrollbar {
+  width: 3px;
+}
+
+.layer-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.layer-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.layer-item.active {
+  background: rgba(124, 92, 252, 0.12);
+  border-color: rgba(124, 92, 252, 0.3);
+}
+
+.layer-visibility {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.layer-visibility:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.layer-visibility.visible {
+  color: var(--accent);
+}
+
+.layer-visibility.hidden {
+  color: var(--text-secondary);
+  opacity: 0.4;
+}
+
+.layer-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layer-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.layer-item:hover .layer-delete-btn {
+  opacity: 1;
+}
+
+.layer-delete-btn:hover {
+  background: rgba(255, 71, 87, 0.15);
+  color: var(--danger);
+}
+
 /* ===== Canvas Container ===== */
 .canvas-container {
   flex: 1;

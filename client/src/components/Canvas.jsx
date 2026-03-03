@@ -1,11 +1,10 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 
-const THROTTLE_MS = 16; // ~60fps throttling
-// Fixed virtual canvas dimensions — all users share this coordinate space
+const THROTTLE_MS = 16;
 const VIRTUAL_W = 1920;
 const VIRTUAL_H = 1080;
 
-export default function Canvas({ color, brushSize, tool, socket }) {
+const Canvas = forwardRef(({ color, brushSize, tool, socket, layers, activeLayerId }, ref) => {
     const canvasRef = useRef(null);
     const overlayRef = useRef(null);
     const ctxRef = useRef(null);
@@ -20,9 +19,21 @@ export default function Canvas({ color, brushSize, tool, socket }) {
     const offsetRef = useRef({ x: 0, y: 0 });
     const displaySize = useRef({ w: 0, h: 0 });
 
+    // Action-based history
+    const actionsRef = useRef([]);
+    const redoStackRef = useRef([]);
+    const currentStrokeRef = useRef(null);
+    const remoteStrokeRef = useRef(null);
+    const layersRef = useRef(layers);
+
+    // Keep layersRef in sync
+    useEffect(() => {
+        layersRef.current = layers;
+    }, [layers]);
+
     const isShapeTool = ['rect', 'circle', 'line'].includes(tool);
 
-    // Calculate scale & offset to fit virtual canvas into container (letterboxed)
+    // ===== Canvas Setup =====
     const calcFit = useCallback((containerW, containerH) => {
         const scaleX = containerW / VIRTUAL_W;
         const scaleY = containerH / VIRTUAL_H;
@@ -32,7 +43,6 @@ export default function Canvas({ color, brushSize, tool, socket }) {
         return { scale, offsetX, offsetY };
     }, []);
 
-    // Initialize canvas
     useEffect(() => {
         const setupCanvas = () => {
             const canvas = canvasRef.current;
@@ -47,7 +57,6 @@ export default function Canvas({ color, brushSize, tool, socket }) {
             scaleRef.current = scale;
             offsetRef.current = { x: offsetX, y: offsetY };
 
-            // Set both canvases to fill container
             [canvas, overlay].forEach((c) => {
                 c.style.width = w + 'px';
                 c.style.height = h + 'px';
@@ -62,10 +71,8 @@ export default function Canvas({ color, brushSize, tool, socket }) {
             ctx.imageSmoothingEnabled = true;
             ctxRef.current = ctx;
 
-            // Fill letterbox bars with dark bg
             ctx.fillStyle = '#111122';
             ctx.fillRect(0, 0, w, h);
-            // Fill virtual canvas area
             ctx.fillStyle = '#1a1a2e';
             ctx.fillRect(offsetX, offsetY, VIRTUAL_W * scale, VIRTUAL_H * scale);
 
@@ -79,44 +86,37 @@ export default function Canvas({ color, brushSize, tool, socket }) {
         setupCanvas();
 
         const handleResize = () => {
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext('2d');
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             setupCanvas();
-            // Note: old image data won't perfectly match new scale,
-            // but for a live session this is acceptable
+            redrawAll();
         };
 
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, [calcFit]);
 
-    // Convert screen coords → virtual coords (0 to VIRTUAL_W/H)
-    const screenToVirtual = useCallback((sx, sy) => {
-        const scale = scaleRef.current;
-        const { x: ox, y: oy } = offsetRef.current;
-        return {
-            vx: (sx - ox) / scale,
-            vy: (sy - oy) / scale,
-        };
-    }, []);
-
-    // Convert virtual coords → screen coords
+    // ===== Coordinate Conversion =====
     const virtualToScreen = useCallback((vx, vy) => {
         const scale = scaleRef.current;
         const { x: ox, y: oy } = offsetRef.current;
-        return {
-            sx: vx * scale + ox,
-            sy: vy * scale + oy,
-        };
+        return { sx: vx * scale + ox, sy: vy * scale + oy };
     }, []);
 
-    // Scale a size value from virtual to screen
-    const virtualSizeToScreen = useCallback((size) => {
-        return size * scaleRef.current;
+    const screenToVirtual = useCallback((sx, sy) => {
+        const scale = scaleRef.current;
+        const { x: ox, y: oy } = offsetRef.current;
+        return { vx: (sx - ox) / scale, vy: (sy - oy) / scale };
     }, []);
 
-    // Draw a line segment in screen coordinates
+    const virtualSizeToScreen = useCallback((size) => size * scaleRef.current, []);
+
+    const getVirtualCoords = useCallback((e) => {
+        const rect = overlayRef.current.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return screenToVirtual(clientX - rect.left, clientY - rect.top);
+    }, [screenToVirtual]);
+
+    // ===== Low-level Drawing (screen coords) =====
     const drawLineScreen = useCallback((x0, y0, x1, y1, strokeColor, strokeSize, ctx) => {
         const c = ctx || ctxRef.current;
         if (!c) return;
@@ -126,10 +126,8 @@ export default function Canvas({ color, brushSize, tool, socket }) {
         c.strokeStyle = strokeColor;
         c.lineWidth = strokeSize;
         c.stroke();
-        c.closePath();
     }, []);
 
-    // Draw a dot in screen coordinates
     const drawDotScreen = useCallback((x, y, strokeColor, strokeSize, ctx) => {
         const c = ctx || ctxRef.current;
         if (!c) return;
@@ -137,54 +135,91 @@ export default function Canvas({ color, brushSize, tool, socket }) {
         c.arc(x, y, strokeSize / 2, 0, Math.PI * 2);
         c.fillStyle = strokeColor;
         c.fill();
-        c.closePath();
     }, []);
 
-    // Draw using virtual coordinates (converts to screen internally)
-    const drawLineVirtual = useCallback((vx0, vy0, vx1, vy1, strokeColor, virtualSize, ctx) => {
-        const { sx: sx0, sy: sy0 } = virtualToScreen(vx0, vy0);
-        const { sx: sx1, sy: sy1 } = virtualToScreen(vx1, vy1);
-        drawLineScreen(sx0, sy0, sx1, sy1, strokeColor, virtualSizeToScreen(virtualSize), ctx);
-    }, [virtualToScreen, virtualSizeToScreen, drawLineScreen]);
-
-    const drawDotVirtual = useCallback((vx, vy, strokeColor, virtualSize, ctx) => {
-        const { sx, sy } = virtualToScreen(vx, vy);
-        drawDotScreen(sx, sy, strokeColor, virtualSizeToScreen(virtualSize), ctx);
-    }, [virtualToScreen, virtualSizeToScreen, drawDotScreen]);
-
-    // Draw a shape in screen coordinates
     const drawShapeScreen = useCallback((shape, x0, y0, x1, y1, strokeColor, strokeSize, ctx) => {
         const c = ctx || ctxRef.current;
         if (!c) return;
-        c.beginPath();
         c.strokeStyle = strokeColor;
         c.lineWidth = strokeSize;
-
         if (shape === 'rect') {
             c.strokeRect(x0, y0, x1 - x0, y1 - y0);
         } else if (shape === 'circle') {
+            c.beginPath();
             const rx = Math.abs(x1 - x0) / 2;
             const ry = Math.abs(y1 - y0) / 2;
-            const cx = (x0 + x1) / 2;
-            const cy = (y0 + y1) / 2;
-            c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+            c.ellipse((x0 + x1) / 2, (y0 + y1) / 2, rx, ry, 0, 0, Math.PI * 2);
             c.stroke();
         } else if (shape === 'line') {
+            c.beginPath();
             c.moveTo(x0, y0);
             c.lineTo(x1, y1);
             c.stroke();
         }
-        c.closePath();
     }, []);
 
-    // Draw shape using virtual coordinates
-    const drawShapeVirtual = useCallback((shape, vx0, vy0, vx1, vy1, strokeColor, virtualSize, ctx) => {
-        const { sx: sx0, sy: sy0 } = virtualToScreen(vx0, vy0);
-        const { sx: sx1, sy: sy1 } = virtualToScreen(vx1, vy1);
-        drawShapeScreen(shape, sx0, sy0, sx1, sy1, strokeColor, virtualSizeToScreen(virtualSize), ctx);
+    // ===== Virtual coord drawing =====
+    const drawLineV = useCallback((vx0, vy0, vx1, vy1, col, sz, ctx) => {
+        const { sx: x0, sy: y0 } = virtualToScreen(vx0, vy0);
+        const { sx: x1, sy: y1 } = virtualToScreen(vx1, vy1);
+        drawLineScreen(x0, y0, x1, y1, col, virtualSizeToScreen(sz), ctx);
+    }, [virtualToScreen, virtualSizeToScreen, drawLineScreen]);
+
+    const drawDotV = useCallback((vx, vy, col, sz, ctx) => {
+        const { sx, sy } = virtualToScreen(vx, vy);
+        drawDotScreen(sx, sy, col, virtualSizeToScreen(sz), ctx);
+    }, [virtualToScreen, virtualSizeToScreen, drawDotScreen]);
+
+    const drawShapeV = useCallback((shape, vx0, vy0, vx1, vy1, col, sz, ctx) => {
+        const { sx: x0, sy: y0 } = virtualToScreen(vx0, vy0);
+        const { sx: x1, sy: y1 } = virtualToScreen(vx1, vy1);
+        drawShapeScreen(shape, x0, y0, x1, y1, col, virtualSizeToScreen(sz), ctx);
     }, [virtualToScreen, virtualSizeToScreen, drawShapeScreen]);
 
-    // Clear overlay
+    // ===== Replay a single action on canvas =====
+    const replayAction = useCallback((action, ctx) => {
+        if (action.type === 'stroke') {
+            action.points.forEach((pt) => {
+                if (pt.type === 'start') {
+                    drawDotV(pt.x, pt.y, pt.color, pt.size, ctx);
+                } else if (pt.type === 'draw') {
+                    drawLineV(pt.px, pt.py, pt.x, pt.y, pt.color, pt.size, ctx);
+                }
+            });
+        } else if (action.type === 'shape') {
+            drawShapeV(action.shape, action.x0, action.y0, action.x1, action.y1, action.color, action.size, ctx);
+        }
+    }, [drawDotV, drawLineV, drawShapeV]);
+
+    // ===== Full Redraw =====
+    const redrawAll = useCallback(() => {
+        const ctx = ctxRef.current;
+        if (!ctx) return;
+        const { w, h } = displaySize.current;
+        const scale = scaleRef.current;
+        const { x: ox, y: oy } = offsetRef.current;
+
+        // Clear entire canvas
+        ctx.fillStyle = '#111122';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(ox, oy, VIRTUAL_W * scale, VIRTUAL_H * scale);
+
+        // Replay all visible actions
+        const currentLayers = layersRef.current;
+        actionsRef.current.forEach((action) => {
+            const layer = currentLayers.find((l) => l.id === action.layerId);
+            if (layer && !layer.visible) return;
+            replayAction(action, ctx);
+        });
+    }, [replayAction]);
+
+    // Redraw when layers change (visibility toggle)
+    useEffect(() => {
+        redrawAll();
+    }, [layers, redrawAll]);
+
+    // ===== Clear overlay =====
     const clearOverlay = useCallback(() => {
         const oCtx = overlayCtxRef.current;
         if (!oCtx) return;
@@ -192,7 +227,7 @@ export default function Canvas({ color, brushSize, tool, socket }) {
         oCtx.clearRect(0, 0, w, h);
     }, []);
 
-    // Flush buffered points via socket
+    // ===== Throttle flush =====
     const flushBuffer = useCallback(() => {
         if (pointBuffer.current.length > 0) {
             socket.emit('draw-batch', pointBuffer.current);
@@ -200,19 +235,7 @@ export default function Canvas({ color, brushSize, tool, socket }) {
         }
     }, [socket]);
 
-    // Get virtual coordinates from mouse/touch event
-    const getVirtualCoords = useCallback((e) => {
-        const canvas = overlayRef.current;
-        const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        const screenX = clientX - rect.left;
-        const screenY = clientY - rect.top;
-        return screenToVirtual(screenX, screenY);
-    }, [screenToVirtual]);
-
     // ===== Mouse/Touch Handlers =====
-
     const handleStart = useCallback((e) => {
         e.preventDefault();
         isDrawing.current = true;
@@ -225,35 +248,56 @@ export default function Canvas({ color, brushSize, tool, socket }) {
             const currentColor = tool === 'eraser' ? '#1a1a2e' : color;
             const currentSize = tool === 'eraser' ? brushSize * 3 : brushSize;
 
-            drawDotVirtual(vx, vy, currentColor, currentSize);
-            socket.emit('draw', { x: vx, y: vy, color: currentColor, size: currentSize, type: 'start' });
+            // Start new stroke action
+            currentStrokeRef.current = {
+                type: 'stroke',
+                layerId: activeLayerId,
+                isLocal: true,
+                points: [{ x: vx, y: vy, color: currentColor, size: currentSize, type: 'start' }],
+            };
+
+            drawDotV(vx, vy, currentColor, currentSize);
+            socket.emit('draw', {
+                x: vx, y: vy, color: currentColor, size: currentSize,
+                type: 'start', layerId: activeLayerId,
+            });
         }
-    }, [color, brushSize, tool, socket, isShapeTool, getVirtualCoords, drawDotVirtual]);
+    }, [color, brushSize, tool, socket, isShapeTool, getVirtualCoords, drawDotV, activeLayerId]);
 
     const handleMove = useCallback((e) => {
         e.preventDefault();
         if (!isDrawing.current) return;
-
         const { vx, vy } = getVirtualCoords(e);
 
         if (isShapeTool) {
             clearOverlay();
             const start = shapeStart.current;
             if (start) {
-                drawShapeVirtual(tool, start.vx, start.vy, vx, vy, color, brushSize, overlayCtxRef.current);
+                drawShapeV(tool, start.vx, start.vy, vx, vy, color, brushSize, overlayCtxRef.current);
             }
         } else {
             const prev = lastPoint.current;
             const currentColor = tool === 'eraser' ? '#1a1a2e' : color;
             const currentSize = tool === 'eraser' ? brushSize * 3 : brushSize;
 
-            // Draw locally immediately
-            drawLineVirtual(prev.vx, prev.vy, vx, vy, currentColor, currentSize);
+            drawLineV(prev.vx, prev.vy, vx, vy, currentColor, currentSize);
             lastPoint.current = { vx, vy };
 
-            // Throttle socket emissions (send virtual coordinates)
+            // Add point to current stroke
+            if (currentStrokeRef.current) {
+                currentStrokeRef.current.points.push({
+                    x: vx, y: vy, px: prev.vx, py: prev.vy,
+                    color: currentColor, size: currentSize, type: 'draw',
+                });
+            }
+
+            // Throttle socket
             const now = Date.now();
-            const point = { x: vx, y: vy, px: prev.vx, py: prev.vy, color: currentColor, size: currentSize, type: 'draw' };
+            const point = {
+                x: vx, y: vy, px: prev.vx, py: prev.vy,
+                color: currentColor, size: currentSize, type: 'draw',
+                layerId: activeLayerId,
+            };
             pointBuffer.current.push(point);
 
             if (now - lastEmitTime.current >= THROTTLE_MS) {
@@ -267,7 +311,7 @@ export default function Canvas({ color, brushSize, tool, socket }) {
                 }, THROTTLE_MS);
             }
         }
-    }, [color, brushSize, tool, isShapeTool, getVirtualCoords, drawLineVirtual, drawShapeVirtual, clearOverlay, flushBuffer]);
+    }, [color, brushSize, tool, isShapeTool, getVirtualCoords, drawLineV, drawShapeV, clearOverlay, flushBuffer, activeLayerId]);
 
     const handleEnd = useCallback((e) => {
         e.preventDefault();
@@ -278,57 +322,96 @@ export default function Canvas({ color, brushSize, tool, socket }) {
             let vx, vy;
             if (e.changedTouches) {
                 const rect = overlayRef.current.getBoundingClientRect();
-                const sx = e.changedTouches[0].clientX - rect.left;
-                const sy = e.changedTouches[0].clientY - rect.top;
-                ({ vx, vy } = screenToVirtual(sx, sy));
+                ({ vx, vy } = screenToVirtual(
+                    e.changedTouches[0].clientX - rect.left,
+                    e.changedTouches[0].clientY - rect.top
+                ));
             } else {
                 ({ vx, vy } = getVirtualCoords(e));
             }
             const start = shapeStart.current;
 
-            // Draw final shape on main canvas
-            drawShapeVirtual(tool, start.vx, start.vy, vx, vy, color, brushSize);
+            drawShapeV(tool, start.vx, start.vy, vx, vy, color, brushSize);
             clearOverlay();
 
-            // Emit shape event (virtual coordinates)
-            socket.emit('draw', {
-                type: 'shape',
-                shape: tool,
-                x0: start.vx, y0: start.vy,
-                x1: vx, y1: vy,
+            const action = {
+                type: 'shape', shape: tool,
+                x0: start.vx, y0: start.vy, x1: vx, y1: vy,
                 color, size: brushSize,
+                layerId: activeLayerId, isLocal: true,
+            };
+            actionsRef.current.push(action);
+            redoStackRef.current = []; // clear redo on new action
+
+            socket.emit('draw', {
+                type: 'shape', shape: tool,
+                x0: start.vx, y0: start.vy, x1: vx, y1: vy,
+                color, size: brushSize, layerId: activeLayerId,
             });
 
             shapeStart.current = null;
         } else {
             flushBuffer();
-            socket.emit('draw', { type: 'end' });
+            socket.emit('draw', { type: 'end', layerId: activeLayerId });
+
+            // Finalize current stroke as action
+            if (currentStrokeRef.current && currentStrokeRef.current.points.length > 0) {
+                actionsRef.current.push(currentStrokeRef.current);
+                redoStackRef.current = [];
+                currentStrokeRef.current = null;
+            }
             lastPoint.current = null;
         }
-    }, [tool, color, brushSize, isShapeTool, socket, screenToVirtual, getVirtualCoords, drawShapeVirtual, clearOverlay, flushBuffer]);
+    }, [tool, color, brushSize, isShapeTool, socket, screenToVirtual, getVirtualCoords, drawShapeV, clearOverlay, flushBuffer, activeLayerId]);
 
     const handleLeave = useCallback((e) => {
         if (isShapeTool) return;
         handleEnd(e);
     }, [isShapeTool, handleEnd]);
 
-    // ===== Remote Drawing Events (all in virtual coordinates) =====
+    // ===== Remote Drawing Events =====
     useEffect(() => {
-        const remoteLastPoint = { current: null };
+        const remoteLP = { current: null };
 
         const handleRemoteDraw = (data) => {
+            // Check if the layer is visible
+            const layer = layersRef.current.find((l) => l.id === data.layerId);
+            const visible = !layer || layer.visible; // if layer not found, still draw
+
             if (data.type === 'start') {
-                remoteLastPoint.current = { vx: data.x, vy: data.y };
-                drawDotVirtual(data.x, data.y, data.color, data.size);
+                remoteLP.current = { vx: data.x, vy: data.y };
+                remoteStrokeRef.current = {
+                    type: 'stroke', layerId: data.layerId || 'layer-1',
+                    isLocal: false,
+                    points: [{ x: data.x, y: data.y, color: data.color, size: data.size, type: 'start' }],
+                };
+                if (visible) drawDotV(data.x, data.y, data.color, data.size);
             } else if (data.type === 'draw') {
-                const px = data.px ?? remoteLastPoint.current?.vx ?? data.x;
-                const py = data.py ?? remoteLastPoint.current?.vy ?? data.y;
-                drawLineVirtual(px, py, data.x, data.y, data.color, data.size);
-                remoteLastPoint.current = { vx: data.x, vy: data.y };
+                const px = data.px ?? remoteLP.current?.vx ?? data.x;
+                const py = data.py ?? remoteLP.current?.vy ?? data.y;
+                if (remoteStrokeRef.current) {
+                    remoteStrokeRef.current.points.push({
+                        x: data.x, y: data.y, px, py,
+                        color: data.color, size: data.size, type: 'draw',
+                    });
+                }
+                remoteLP.current = { vx: data.x, vy: data.y };
+                if (visible) drawLineV(px, py, data.x, data.y, data.color, data.size);
             } else if (data.type === 'shape') {
-                drawShapeVirtual(data.shape, data.x0, data.y0, data.x1, data.y1, data.color, data.size);
+                const action = {
+                    type: 'shape', shape: data.shape,
+                    x0: data.x0, y0: data.y0, x1: data.x1, y1: data.y1,
+                    color: data.color, size: data.size,
+                    layerId: data.layerId || 'layer-1', isLocal: false,
+                };
+                actionsRef.current.push(action);
+                if (visible) drawShapeV(data.shape, data.x0, data.y0, data.x1, data.y1, data.color, data.size);
             } else if (data.type === 'end') {
-                remoteLastPoint.current = null;
+                if (remoteStrokeRef.current && remoteStrokeRef.current.points.length > 0) {
+                    actionsRef.current.push(remoteStrokeRef.current);
+                    remoteStrokeRef.current = null;
+                }
+                remoteLP.current = null;
             }
         };
 
@@ -337,7 +420,9 @@ export default function Canvas({ color, brushSize, tool, socket }) {
         };
 
         const handleClear = () => {
-            clearCanvas();
+            actionsRef.current = [];
+            redoStackRef.current = [];
+            redrawAll();
         };
 
         socket.on('draw', handleRemoteDraw);
@@ -349,26 +434,59 @@ export default function Canvas({ color, brushSize, tool, socket }) {
             socket.off('draw-batch', handleRemoteBatch);
             socket.off('clear', handleClear);
         };
-    }, [socket, drawLineVirtual, drawDotVirtual, drawShapeVirtual]);
+    }, [socket, drawLineV, drawDotV, drawShapeV, redrawAll]);
 
-    // Clear canvas
+    // ===== Undo / Redo / Clear =====
+    const undo = useCallback(() => {
+        const actions = actionsRef.current;
+        for (let i = actions.length - 1; i >= 0; i--) {
+            if (actions[i].isLocal) {
+                const removed = actions.splice(i, 1)[0];
+                redoStackRef.current.push(removed);
+                redrawAll();
+                return;
+            }
+        }
+    }, [redrawAll]);
+
+    const redo = useCallback(() => {
+        if (redoStackRef.current.length === 0) return;
+        const action = redoStackRef.current.pop();
+        actionsRef.current.push(action);
+        redrawAll();
+    }, [redrawAll]);
+
     const clearCanvas = useCallback(() => {
-        const ctx = ctxRef.current;
-        if (!ctx) return;
-        const { w, h } = displaySize.current;
-        const scale = scaleRef.current;
-        const { x: ox, y: oy } = offsetRef.current;
-        // Fill letterbox
-        ctx.fillStyle = '#111122';
-        ctx.fillRect(0, 0, w, h);
-        // Fill virtual area
-        ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(ox, oy, VIRTUAL_W * scale, VIRTUAL_H * scale);
-    }, []);
+        actionsRef.current = [];
+        redoStackRef.current = [];
+        redrawAll();
+    }, [redrawAll]);
 
+    const deleteLayerActions = useCallback((layerId) => {
+        actionsRef.current = actionsRef.current.filter((a) => a.layerId !== layerId);
+        redoStackRef.current = redoStackRef.current.filter((a) => a.layerId !== layerId);
+        redrawAll();
+    }, [redrawAll]);
+
+    // Expose methods to parent
+    useImperativeHandle(ref, () => ({
+        undo, redo, clearCanvas, deleteLayerActions,
+    }), [undo, redo, clearCanvas, deleteLayerActions]);
+
+    // Keyboard shortcuts
     useEffect(() => {
-        window.__clearCanvas = clearCanvas;
-    }, [clearCanvas]);
+        const handleKeyDown = (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undo();
+            } else if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+                e.preventDefault();
+                redo();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [undo, redo]);
 
     return (
         <div className="canvas-wrapper">
@@ -386,4 +504,7 @@ export default function Canvas({ color, brushSize, tool, socket }) {
             />
         </div>
     );
-}
+});
+
+Canvas.displayName = 'Canvas';
+export default Canvas;

@@ -7,15 +7,11 @@ const PRESET_COLORS = [
 ];
 
 export default function Toolbar({
-    color,
-    setColor,
-    brushSize,
-    setBrushSize,
-    tool,
-    setTool,
-    onClear,
-    isConnected,
-    userCount,
+    color, setColor, brushSize, setBrushSize,
+    tool, setTool, onClear, onUndo, onRedo,
+    isConnected, userCount,
+    layers, activeLayerId, setActiveLayerId,
+    addLayer, deleteLayer, toggleLayerVisibility,
 }) {
     const [showCustomColor, setShowCustomColor] = useState(false);
 
@@ -42,15 +38,29 @@ export default function Toolbar({
                 )}
             </div>
 
-            {/* Tools */}
+            {/* Undo / Redo */}
+            <div className="toolbar-section">
+                <div className="tool-buttons">
+                    <button className="tool-btn" onClick={onUndo} title="Undo (Ctrl+Z)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="1 4 1 10 7 10" />
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                        </svg>
+                    </button>
+                    <button className="tool-btn" onClick={onRedo} title="Redo (Ctrl+Shift+Z)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            {/* Draw Tools */}
             <div className="toolbar-section">
                 <label className="section-label">Draw</label>
                 <div className="tool-buttons">
-                    <button
-                        className={`tool-btn ${tool === 'brush' ? 'active' : ''}`}
-                        onClick={() => setTool('brush')}
-                        title="Brush"
-                    >
+                    <button className={`tool-btn ${tool === 'brush' ? 'active' : ''}`} onClick={() => setTool('brush')} title="Brush">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 19l7-7 3 3-7 7-3-3z" />
                             <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
@@ -58,11 +68,7 @@ export default function Toolbar({
                             <circle cx="11" cy="11" r="2" />
                         </svg>
                     </button>
-                    <button
-                        className={`tool-btn ${tool === 'eraser' ? 'active' : ''}`}
-                        onClick={() => setTool('eraser')}
-                        title="Eraser"
-                    >
+                    <button className={`tool-btn ${tool === 'eraser' ? 'active' : ''}`} onClick={() => setTool('eraser')} title="Eraser">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.8 1.4c.8-.8 2-.8 2.8 0L21.2 5c.8.8.8 2 0 2.8L12 17" />
                         </svg>
@@ -74,32 +80,14 @@ export default function Toolbar({
             <div className="toolbar-section">
                 <label className="section-label">Shapes</label>
                 <div className="tool-buttons">
-                    <button
-                        className={`tool-btn ${tool === 'rect' ? 'active' : ''}`}
-                        onClick={() => setTool('rect')}
-                        title="Rectangle"
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                        </svg>
+                    <button className={`tool-btn ${tool === 'rect' ? 'active' : ''}`} onClick={() => setTool('rect')} title="Rectangle">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /></svg>
                     </button>
-                    <button
-                        className={`tool-btn ${tool === 'circle' ? 'active' : ''}`}
-                        onClick={() => setTool('circle')}
-                        title="Circle"
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10" />
-                        </svg>
+                    <button className={`tool-btn ${tool === 'circle' ? 'active' : ''}`} onClick={() => setTool('circle')} title="Circle">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /></svg>
                     </button>
-                    <button
-                        className={`tool-btn ${tool === 'line' ? 'active' : ''}`}
-                        onClick={() => setTool('line')}
-                        title="Line"
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="5" y1="19" x2="19" y2="5" />
-                        </svg>
+                    <button className={`tool-btn ${tool === 'line' ? 'active' : ''}`} onClick={() => setTool('line')} title="Line">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="19" x2="19" y2="5" /></svg>
                     </button>
                 </div>
             </div>
@@ -111,64 +99,83 @@ export default function Toolbar({
                     {PRESET_COLORS.map((c) => (
                         <button
                             key={c}
-                            className={`color-swatch ${color === c && tool === 'brush' ? 'active' : ''}`}
+                            className={`color-swatch ${color === c && tool !== 'eraser' ? 'active' : ''}`}
                             style={{ backgroundColor: c }}
-                            onClick={() => {
-                                setColor(c);
-                                setTool('brush');
-                            }}
+                            onClick={() => { setColor(c); setTool('brush'); }}
                             title={c}
                         />
                     ))}
                 </div>
                 <div className="custom-color-row">
-                    <button
-                        className="custom-color-btn"
-                        onClick={() => setShowCustomColor(!showCustomColor)}
-                    >
+                    <button className="custom-color-btn" onClick={() => setShowCustomColor(!showCustomColor)}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10" />
-                            <line x1="12" y1="8" x2="12" y2="16" />
-                            <line x1="8" y1="12" x2="16" y2="12" />
+                            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
                         </svg>
                         Custom
                     </button>
                     {showCustomColor && (
-                        <input
-                            type="color"
-                            value={color}
-                            onChange={(e) => {
-                                setColor(e.target.value);
-                                setTool('brush');
-                            }}
-                            className="color-picker-input"
-                        />
+                        <input type="color" value={color} onChange={(e) => { setColor(e.target.value); setTool('brush'); }} className="color-picker-input" />
                     )}
                 </div>
             </div>
 
             {/* Brush Size */}
             <div className="toolbar-section">
-                <label className="section-label">
-                    Size: {brushSize}px
-                </label>
-                <input
-                    type="range"
-                    min="1"
-                    max="50"
-                    value={brushSize}
-                    onChange={(e) => setBrushSize(parseInt(e.target.value))}
-                    className="size-slider"
-                />
+                <label className="section-label">Size: {brushSize}px</label>
+                <input type="range" min="1" max="50" value={brushSize} onChange={(e) => setBrushSize(parseInt(e.target.value))} className="size-slider" />
                 <div className="size-preview-wrapper">
-                    <div
-                        className="size-preview"
-                        style={{
-                            width: Math.min(brushSize, 40),
-                            height: Math.min(brushSize, 40),
-                            backgroundColor: tool === 'eraser' ? '#555' : color,
-                        }}
-                    />
+                    <div className="size-preview" style={{ width: Math.min(brushSize, 40), height: Math.min(brushSize, 40), backgroundColor: tool === 'eraser' ? '#555' : color }} />
+                </div>
+            </div>
+
+            {/* Layers */}
+            <div className="toolbar-section layers-section">
+                <div className="layers-header">
+                    <label className="section-label" style={{ marginBottom: 0 }}>Layers</label>
+                    <button className="layer-add-btn" onClick={addLayer} title="Add Layer">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                    </button>
+                </div>
+                <div className="layer-list">
+                    {[...layers].reverse().map((layer) => (
+                        <div
+                            key={layer.id}
+                            className={`layer-item ${activeLayerId === layer.id ? 'active' : ''}`}
+                            onClick={() => setActiveLayerId(layer.id)}
+                        >
+                            <button
+                                className={`layer-visibility ${layer.visible ? 'visible' : 'hidden'}`}
+                                onClick={(e) => { e.stopPropagation(); toggleLayerVisibility(layer.id); }}
+                                title={layer.visible ? 'Hide layer' : 'Show layer'}
+                            >
+                                {layer.visible ? (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                                    </svg>
+                                ) : (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                                        <line x1="1" y1="1" x2="23" y2="23" />
+                                    </svg>
+                                )}
+                            </button>
+                            <span className="layer-name">{layer.name}</span>
+                            {layers.length > 1 && (
+                                <button
+                                    className="layer-delete-btn"
+                                    onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }}
+                                    title="Delete layer"
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                    ))}
                 </div>
             </div>
 
